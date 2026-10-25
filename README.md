@@ -1,68 +1,101 @@
-# IMF Relative PPP Explorer
+# Relative PPP Explorer (IMF data)
 
-A Streamlit dashboard for comparing two economies' currencies using monthly IMF consumer-price indices and period-average foreign-exchange rates, with historical valuation benchmarks and downloadable calculations.
+A Streamlit app that compares any two IMF economies (or the Euro area) and shows whether one currency is
+over- or undervalued against the other according to **relative purchasing power parity (PPP)**.
 
-## Deploy to Streamlit Community Cloud
+## What it does
 
-1. Create a GitHub repository with **`app.py`**, **`requirements.txt`**, and **`README.md`** in its **top-level directory**.
-2. Paste each file's content (without Markdown code fences) and commit the changes to the `main` branch.
-3. Go to <https://share.streamlit.io>, log in with GitHub, and select **Create app → Yup, I have an app**.
-4. Choose your repository, branch **`main`**, and entrypoint **`app.py`**. In Advanced settings use **Python 3.12**; leave Secrets empty.
-5. Deploy. The dashboard requests IMF data as you select countries; an IMF API key is not used by the app.
+1. **Pick two economies.** Country 1 is the base currency, Country 2 the quote currency.
+2. **Downloads monthly IMF data** from January 1976 where available:
+   - CPI: dataflow `IMF.STA/CPI`, key `{ISO3}.CPI._T.IX.M`
+   - Exchange rates: dataflow `IMF.STA/ER`, key `{ISO3}.XDC_USD.PA_RT.M` (national currency per USD, period average)
+   - Bilateral goods trade (for the balanced-trade benchmark): dataflow `IMF.STA/IMTS`,
+     keys `{REPORTER}.XG_FOB_USD.{PARTNER}.M` and `{REPORTER}.MG_CIF_USD.{PARTNER}.M`
+   - The Euro area uses the IMF code `G163`.
+3. **Calculates**
+   - `S(t)` = units of Country 2 currency per 1 unit of Country 1 currency = (C2 per USD) / (C1 per USD)
+   - `RER(t) = S(t) × P1(t) / P2(t)`
+   - `RER*` = average of RER over the valid months of the selected sample (recalculated whenever the dates change)
+   - `Real Index(t) = 100 × RER(t) / RER*`
+   - PPP-implied nominal rate = `RER* × P2 / P1` (the value of S at which the index would be 100)
+4. **Benchmarks** drawn on the chart:
+   - Sample average (= 100 by construction)
+   - Average of the last 30 years (360 months ending at the latest available month)
+   - Balanced-trade moment: average RER over the 12 months ending when 12-month bilateral goods trade
+     was balanced within a tolerance you choose (default ±5%). If the reporting country does not publish
+     bilateral trade, mirror data from the partner are used.
+   - Optional custom anchor month (switched on automatically when no trade data exist)
+5. **Interactive chart** with Real, Nominal, or Both (separate axes). Nominal S is shown in actual currency
+   units, never normalised.
+   - A **"Show on chart" panel** to the right of the chart has one checkbox per curve (Real Index, Nominal S,
+     PPP-implied S), per benchmark and per background colour. Each checkbox shows its own line style or colour
+     swatch (it doubles as the legend), and its **?** icon explains what it is. Options that do not apply to the
+     current view are greyed out. Log scale for the nominal axis is there too.
+   - **Valuation background:** each month is compared with the two relative-PPP benchmarks (30-year average and
+     balanced-trade moment; the custom anchor month replaces the balanced-trade benchmark when trade data are
+     missing). **Light red** = Country 1 currency overvalued vs both, **light yellow** = overvalued vs one and
+     undervalued vs the other (undefined), **light blue** = undervalued vs both. Months with missing data stay white.
+6. **Summary** paragraph and statistics table: which currency is undervalued, by how much, against each benchmark,
+   the current background classification, and how many months of the sample fall in each colour.
+7. **CSV download** of every observation and calculation in the selected sample.
+8. **Collapsible metric guide** and a **disclaimer** on interpretation.
 
-To run locally:
+## Files
 
-```bash
-python -m pip install -r requirements.txt
-streamlit run app.py
+| File | Purpose |
+|---|---|
+| `app.py` | The Streamlit application |
+| `requirements.txt` | Python packages (compatible with Python 3.12) |
+| `README.md` | This file |
+
+All three files sit at the top level of the repository.
+
+## Deploy on Streamlit Community Cloud
+
+1. In the GitHub repository: **Add file → Create new file**, name it `app.py`, paste the code, **Commit changes**.
+   Repeat for `requirements.txt`, then edit `README.md`.
+2. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub → **Create app → Yup, I have an app**.
+3. Choose the repository, branch `main`, main file `app.py`.
+4. **Advanced settings:** Python **3.12**. Secrets can stay empty.
+5. **Deploy** and save the `*.streamlit.app` link.
+
+### Optional IMF API key
+
+The IMF API works without a key. If you later get rate-limited, register at the IMF API portal and add this in
+Streamlit **Settings → Secrets**:
+
+```toml
+IMF_API_KEY = "your-key-here"
 ```
 
-## Data and calculation conventions
+## Checks to run after deploying
 
-- **Source:** IMF SDMX 3.0 (`https://api.imf.org/external/sdmx/3.0`), dataflows `IMF.STA/CPI`, `IMF.STA/ER`, and optionally `IMF.STA/IMTS`.
-- **Monthly CPI:** `{ISO3}.CPI._T.IX.M`. These are CPI **index levels**, not inflation-rate percentages.
-- **Monthly FX:** `{ISO3}.XDC_USD.PA_RT.M`. IMF quotes local-currency units **per USD**, as a *monthly period average*. For the United States, USD/USD is set to 1 by identity.
-- **Euro area:** special IMF code `G163`. A Euro-area series will only work if the IMF returns that series. Other selections use ISO 3166 alpha-3 codes; not every economy in the list necessarily has IMF data.
-- **Requested history:** from January 1976 onward where available. The default chart starts with the earliest common available month (January 1976 if both series go back that far). No invented/interpolated observations.
-- **Quote convention:** S(t) = units of Country 2 currency per 1 unit of Country 1 currency. With local-per-USD rates `FX1` and `FX2`, **S(t) = FX2(t) / FX1(t)**.
-- **Real exchange rate:** `RER(t) = S(t) × CPI1(t) / CPI2(t)`.
-- **Selected-period mean:** `RER* = arithmetic mean(RER(t))` across *valid* monthly data in the user-selected date window.
-- **Real index:** `100 × RER(t) / RER*`; its exact, unrounded mean within that sample is **100**. The valuation snapshot always uses the **latest common available month**, even when you chart an earlier historical interval.
-- **Independent 30-year reference:** arithmetic mean RER for the 360 calendar months ending at the latest overlapping observation. The number of valid observations is displayed; the sample may have fewer than 360.
-- **Optional trade reference:** IMF IMTS annual bilateral merchandise series `{reporter}.XG_FOB_USD+MG_CIF_USD.{partner}.A`, where `reporter` is Country 1 or (if required) Country 2. It chooses the eligible year with the *lowest* `abs(exports-imports)/(exports+imports)` below the user's threshold, requires annual trade of at least 20% of the 90th-percentile historical trade amount, and at least six monthly RER observations in the year. Benchmark RER is the mean RER of that year. If unavailable, it does not invent a reference; the user may supply a **manual, unverified** comparison month or turn the feature off.
-- **PPP-consistent nominal rate at a fixed RER benchmark `B`:** `S_ppp(t) = B × CPI2(t) / CPI1(t)`; calculated rather than observed.
+- **Direction of S:** Country 1 = United Kingdom, Country 2 = United States. The page should say
+  `S(t) = USD per GBP`, with values around 1.2–1.4 in recent years (around 2.0+ in the early 1980s).
+- **Average = 100:** change the sample dates, download the CSV, and average the `real_index` column
+  (blank rows are months with missing data and are excluded). The result should be 100.
+- **One RER by hand:** pick a row in the CSV and check
+  `S_USD_per_GBP = 1 / GBR_GBP_per_USD` and `RER = S_USD_per_GBP × P1_CPI_GBR / P2_CPI_USA`,
+  then `real_index = 100 × RER / RER_star_sample_mean`.
+- **Views:** switch between Real, Nominal and Both, and tick/untick items in the "Show on chart" panel.
+- **Colours:** in red months the Real Index sits above both the 30-year and balanced-trade lines, in blue months
+  below both, and in yellow months between them.
 
-## Reading the dashboard
+## Troubleshooting
 
-- **Real index > 100**: Country 1 currency is historically stronger than its **selected-period** mean, not necessarily overvalued in an economic equilibrium sense. Below 100 means historically weaker.
-- **Latest RER > trailing-30-year RER mean**: Currency 1 is relatively strong versus that historical reference. Below means relatively weak.
-- **Nominal chart** shows actual Country-2-currency units per Country 1 currency. Never normalized. Optional PPP-implied paths use the same units.
-- **Both** uses the real index on one axis and nominal rates on a different axis.
-- **CSV** includes each month in the *selected* date range, raw CPI/FX observations, nominal S, RER, normalized real index, benchmark values, and PPP-implied nominal paths. Missing data remain blank, rather than being forward-filled. Formulas use unrounded data; CSV retains approximately 12 significant digits.
+- **"Not enough IMF data"**: the IMF does not publish monthly CPI or exchange rates for that economy
+  (or only for short periods). Open **Diagnostics: IMF requests** at the bottom of the page to see every
+  URL called and its result.
+- **Request errors (HTTP 429, 5xx, timeouts)**: the IMF API is busy or rate-limiting. Wait a minute and reload,
+  or use the **Clear cached IMF data and reload** button in the diagnostics panel. Failed requests are never cached.
+- **Euro area:** if the IMF has no euro-area exchange rate under `G163`, the app uses EUR per USD from the
+  Germany series from January 1999 onward and says so on the page.
+- When reporting a problem, copy the exact error and the diagnostics table.
 
-## Important limitations
+## Notes on interpretation
 
-1. This is a **historical CPI-adjusted comparison**, not a forecast, an absolute purchasing-power parity estimate, or a tradable fair-value quote.
-2. Relative PPP is more informative over long horizons; real exchange rates may remain away from historical means for extended periods owing to structural factors.
-3. Bilateral merchandise trade balance does **not** imply balanced services trade, the current account, capital flows, or an equilibrium exchange rate. FOB export and CIF import measurements also differ.
-4. CPI methodology and base dates, currency redenominations, euro adoption and predecessor currencies, missing monthly data, revisions and changes in IMF datasets may materially affect the analysis.
-5. The two country selectors are broad ISO-country choices plus `G163` and `XKX`. Selecting a country with missing IMF CPI/ER data shows a clear error instead of a fabricated result.
-6. The application requires outbound access to the IMF API. The IMF may have outages, rate limits, changed response formats or unavailable series. The API is not queried from this README.
+Relative PPP measures misalignment only relative to the chosen sample average or benchmark, real exchange rates
+can deviate for many years, CPI baskets differ across countries, and IMF data may have gaps, revisions and
+redenominations. The app is an educational tool, not financial advice.
 
-## Recommended manual checks
-
-1. Select **United Kingdom (GBR)** as Country 1 and **United States (USA)** as Country 2. `S` should be **USD per GBP**, approximately the inverse of the IMF's GBP-per-USD series.
-2. Change the date window and download the CSV. Compute the mean of the nonmissing `real_index_sample_100` column: it should be 100, apart from export rounding.
-3. Pick a valid month and verify `nominal_s_currency2_per_currency1 = fx_2_lcu_per_usd / fx_1_lcu_per_usd` and `rer = nominal_s_currency2_per_currency1 × cpi_1 / cpi_2`.
-4. Verify the chart modes **Real**, **Nominal**, and **Both**. Confirm the chart's nominal axis has real currency units and is not rebased to 100.
-5. Test a country pair with limited data. Verify the app warns rather than filling in absent values.
-
-## Data sources
-
-- [IMF Data](https://data.imf.org/)
-- [IMF API information](https://data.imf.org/en/Resource-Pages/IMF-API)
-- [IMF CPI](https://data.imf.org/en/datasets/IMF.STA:CPI)
-- [IMF exchange rates](https://data.imf.org/en/datasets/IMF.STA:ER)
-- [IMF bilateral merchandise trade (IMTS)](https://data.imf.org/en/datasets/IMF.STA:IMTS)
-
-This project has no financial-advice or forecasting capability; interpret all benchmarks cautiously.
+Data source: International Monetary Fund, via the IMF SDMX 3.0 API (`https://api.imf.org/external/sdmx/3.0`).
